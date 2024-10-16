@@ -23,13 +23,17 @@ In this notebook, we are implementing simulations of evolutionary rescue by a si
 
 ## List of variables and parameters
 
-- $N_A$ current size of the mutant (A) population (changes over time)
+- $N_a$ current size of the population "a"  (changes over time)
+- $N_ma$ current size of the mutant (A) who migrated from the population "a" (changes over time)
+- $N_b$ current size of the population "b" (changes over time)
+- $T$ Time
+- N_init_a initial population size of population "A" (should be a positive integer)
+- N_init_b initial population size of population "B"  (should be a non-negative integer)
+- decay_rate detrimental effect of the environment on the population "B" (i.e., the wild-type population decays at this rate; should be >0 to induce potential extinction)
+- t_max number of generations after which to stop the simulation (should be an integer >0; this is not a model parameter but a setting for the simulations). In the code presented here, the simulation stops automatically if the population goes extinct, or if it recovers and exceeds 1.5 times the original total population size, so t_max can be set to a large value without creating extremely long simulation times.
 
-- `N_init_A` initial population size of the mutant population (should be a non-negative integer)
 
-- `sel_coeff` selective advantage of the mutant over the pollution (should be >decay_rate to allow for evolutionary rescue)
-- `mut_rate` mutation rate from the wild type to the mutant genotype (should be >0 and small)
-- `t_max` number of generations after which to stop the simulation (should be an integer >0; this is not a model parameter but a setting for the simulations). In the code presented here, the simulation stops automatically if the population goes extinct, or if it recovers and exceeds 1.5 times the original total population size, so `t_max` can be set to a large value without creating extremely long simulation times.
+
 
 ## Simulate one generation of population size change
 We want to observe the numbers of wild-type and mutant individuals over time. As first step, we simulate one generation of the population. At time $t$, the population has $N_a$ wild-type individuals and $N_A$ mutant individuals. First, these reproduce. This is modeled by drawing a Poisson random variable according to the expected absolute number $N_a \cdot (1-r)$ of wild-type individuals, where $r$ is the decay rate of the wild type, and $N_A \cdot (1-r+s)$ of mutant individuals, where $s$ is the selective advantage of the mutant over the wild time. Then mutation from $a$ to $A$ occurs as a Poisson random variable according to the given mutation rate. This defines the composition of the population at time $t+1$.
