@@ -24,9 +24,10 @@ In this notebook, we are implementing simulations of evolutionary rescue by a si
 ## List of variables and parameters
 
 - $N_a$ current size of the population "a"  (changes over time)
-- $N_ma$ current size of the mutant (A) who migrated from the population "a" (changes over time)
+- $N_mut$ current size of the mutant (A) who migrated from the population "a" (changes over time)
 - $N_b$ current size of the population "b" (changes over time)
 - $T$ Time
+- N_migra_rate precentage of population who migrate from point A to piont B in population A
 - N_init_a initial population size of population "A" (should be a positive integer)
 - N_init_b initial population size of population "B"  (should be a non-negative integer)
 - decay_rate detrimental effect of the environment on the population "B" (i.e., the wild-type population decays at this rate; should be >0 to induce potential extinction)
@@ -36,7 +37,27 @@ In this notebook, we are implementing simulations of evolutionary rescue by a si
 
 
 ## Simulate one generation of population size change
-We want to observe the numbers of wild-type and mutant individuals over time. As first step, we simulate one generation of the population. At time $t$, the population has $N_a$ wild-type individuals and $N_A$ mutant individuals. First, these reproduce. This is modeled by drawing a Poisson random variable according to the expected absolute number $N_a \cdot (1-r)$ of wild-type individuals, where $r$ is the decay rate of the wild type, and $N_A \cdot (1-r+s)$ of mutant individuals, where $s$ is the selective advantage of the mutant over the wild time. Then mutation from $a$ to $A$ occurs as a Poisson random variable according to the given mutation rate. This defines the composition of the population at time $t+1$.
+We want to observe the numbers of mutant of population A who surviver the migration . As first step, we simulate one generation of the population A. At time $T$, the population B has $N_b$ current size of the population "b" and $N_ma$ current size of the mutant (A) who migrated from the population "a". First, these reproduce. This is modeled by drawing a Poisson random variable according to the expected absolute number $N_a \cdot (1-r)$ of wild-type individuals, where $r$ is the decay rate of the wild type, and $N_A \cdot (1-r+s)$ of mutant individuals, where $s$ is the selective advantage of the mutant over the wild time. Then mutation from $a$ to $A$ occurs as a Poisson random variable according to the given mutation rate. This defines the composition of the population at time $t+1$.
+```{r}
+simulate_one_gen <- function(N_a, N_ma, N_b, pollution_rate, migra_rate,mut_rate) {
+  # draw offspring according to Poisson distribution
+  offsp_b <- rpois(1, N_b * (1-pollution_rate))
+  offsp_a <- rpois(1, N_a * (1))
+  # draw new migration according to Poisson distribution
+  migra_a_to_b <- rpois(1, offsp_a * migra_rate)
+  
+  # determine new population sizes of population B plus migration
+  N_a_new <- max((offsp_a - migra_a_to_b) * 1.25, 0)
+  N_b_new <-  offsp_b + migra_a_to_b
+  # draw new mutants according to Poisson distribution 
+  N_mut <- rpois(1, (N_b_new) * mut_rate)
+  return(c(N_a_new, N_b_new))
+}
+# Test the function
+print(simulate_one_gen(N_a =1000, N_ma =0, N_b =1000, pollution_rate =.7, migra_rate =.2, mut_rate =.01))
+``` 
+
+
 ```{r}
 simulate_one_gen <- function(N_a, N_A, decay_rate, sel_coeff, mut_rate) {
   # draw offspring according to Poisson distribution
