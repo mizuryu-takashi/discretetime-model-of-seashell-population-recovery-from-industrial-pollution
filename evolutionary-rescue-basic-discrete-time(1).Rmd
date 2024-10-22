@@ -39,23 +39,28 @@ In this notebook, we are implementing simulations of evolutionary rescue by a si
 ## Simulate one generation of population size change
 We want to observe the numbers of mutant of population A who surviver the migration . As first step, we simulate one generation of the population A. At time $T$, the population B has $N_b$ current size of the population "b" and $N_ma$ current size of the mutant (A) who migrated from the population "a". First, these reproduce. This is modeled by drawing a Poisson random variable according to the expected absolute number $N_a \cdot (1-r)$ of wild-type individuals, where $r$ is the decay rate of the wild type, and $N_A \cdot (1-r+s)$ of mutant individuals, where $s$ is the selective advantage of the mutant over the wild time. Then mutation from $a$ to $A$ occurs as a Poisson random variable according to the given mutation rate. This defines the composition of the population at time $t+1$.
 ```{r}
-simulate_one_gen <- function(N_a, N_bw, N_bm, pollution_rate,sel_coeff, migra_rate, mut_rate){
-  # draw offspring_a according to Poisson distribution
-  offsp_a <- rpois(1, N_a * (1))
+simulate_one_gen <- function(N_bw, N_bm, pollution_rate,sel_coeff, migra_rate, mut_rate){
+ 
   # draw new migration according to Poisson distribution
-  migra_a_to_b <- rpois(1, offsp_a * migra_rate)
+  migra_a_to_b <- rpois(1, migra_rate)
+  N_bw <- migra_a_to_b + N_bw
   # draw offspring_b according to Poisson distribution
   offsp_bw <- rpois(1, N_bw * (1-pollution_rate))
-  offsp_bm <- rpois(1, ((N_bw+migra_a_to_b) * mut_rate)*(1+sel_coeff))
+  offsp_bm <- rpois(1, N_bm * (1-pollution_rate+sel_coeff))
+  # draw new mutants according to Poisson distribution
+  mutations <- rpois(1, offsp_bw * mut_rate)
+  
   # determine new population sizes of population B plus migration
   # N_a_new <- max((offsp_a - migra_a_to_b) * 1.25, 0)
-  N_b_new <- max(floor(offsp_bw+offsp_bm+migra_a_to_b), 0)
+  
+  N_bw_new <- max(offsp_bw - mutations, 0)
+  N_bm_new <- offsp_bm + mutations
   # draw new mutants according to Poisson distribution 
-  N_mut <- rpois(1, (N_b_new) * mut_rate)
-  return(c(N_mut, N_b_new))
+  
+  return(c(N_bw_new,N_bm_new))
 }
 # Test the function
-print(simulate_one_gen(N_a =1000, N_bw =1000, N_bm = 0, pollution_rate =.7, sel_coeff=.2, migra_rate =.2, mut_rate =.01))
+print(simulate_one_gen(N_bw =1000, N_bm = 0, pollution_rate =.7, sel_coeff=.8, migra_rate =2, mut_rate =.01))
 ``` 
 
 
@@ -79,7 +84,7 @@ simulate_pop <- function(N_bw, N_bm, pollution_rate, sel_coeff, migra_rate, mut_
   # run the simulation until generation t_max
   for (i in 1:t_max+1) {
     # redefine the current population one generation later
-    pop_new <- simulate_one_gen(pop_new[1],pop_new[2], pollution_rate, sel_coeff, migra_rate, mut_rate, t_max)
+    pop_new <- simulate_one_gen_mig_logistic(pop_new[1],pop_new[2],carrying_capacity, pollution_rate, sel_coeff, migra_rate, mut_rate, t_max)
     # add the new population sizes to the output vector
     pop_vector <- rbind(pop_vector,pop_new)
     # condition to stop the simulation before t_max: either the population exceeds 1.5 times the original population size, or it goes extinct
@@ -98,7 +103,7 @@ simulate_pop <- function(N_bw, N_bm, pollution_rate, sel_coeff, migra_rate, mut_
 # set t_max to a value to be used througout
 max_gen <- 1000
 # create your simulation data
-output <- simulate_pop(1000, 0, 0.7, 0.2, 0.2, 0.01, max_gen)
+output <- simulate_pop(1000, 0, 1000, 0.7, 0.2, 0.2, 0.01, max_gen)
 # show the last few lines of the data table
 print(tail(output))
 # plot the output - note that the plot range and the x axis have to be adjusted based on the length of the table
@@ -110,6 +115,7 @@ plot(x_range,output[,1]+output[,2],type='l',ylim=c(0,max(output[,1]+output[,2]))
 lines(x_range,output[,1], col="blue")
 # add number of mutant individuals
 lines(x_range,output[,2], col="red")
+print(pop_new[1]=1000,pop_new[2]=0,carrying_capacity=1000, pollution_rate=.7, sel_coeff=.2, migra_rate=.2, mut_rate=.01, max_gen)
 ``` 
 
 ### Questions
