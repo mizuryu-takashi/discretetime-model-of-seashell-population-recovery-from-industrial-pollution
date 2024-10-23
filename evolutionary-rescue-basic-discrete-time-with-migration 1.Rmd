@@ -1,6 +1,6 @@
 ---
 title: "Basic model of evolutionary rescue in discrete time with immigration and competition"
-author: "Claudia Bank"
+author: "Melo Filho; Zhu Qingdong"
 date: "2024-10-22"
 output:
   html_document:
@@ -172,6 +172,41 @@ simulate_pop_mig_logistic <- function(N_init_a, N_init_A, carrying_capacity, dec
 # set t_max to a value to be used througout
 max_gen <- 100
 # create your simulation data
-output <- simulate_pop_mig_logistic(1000,0,1000,0.1,0.3,0.001,3,max_gen)
+output_gens <- simulate_pop_mig_logistic(1000,0,1000,0.1,0.3,0.001,3,max_gen)
 print(output)
+```
+
+``` {r}
+
+N_init_a <-  1000
+N_init_A <- 0
+carrying_capacity <- 1000
+decay_rate <- 0.1
+sel_coeff <- 0.3
+mut_rate <- 0.001
+mig_rate_a <- 3
+t_max <- 1000
+n_reps <- 100
+
+
+table_matrix <- matrix(nrow = n_reps, ncol = 1) 
+print(table_matrix)  
+
+
+# repeat the simulation n_reps times
+
+ for (rep in 1:n_reps) {
+   
+# start the simulation with the same initials conditions
+table_matrix[rep,1] <- simulate_pop_mig_logistic(N_init_a, N_init_A, carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a, t_max)}
+ 
+  print(table_matrix)  
+
+  ## Calculate the average to carrying capacity
+  avg_gen_time <- mean(table_matrix)
+  print(avg_gen_time)
+  
+
+
+
 ```
