@@ -1,0 +1,203 @@
+---
+title: "Discrete-Time Model of Seashell Population Recovery from Industrial Pollution"
+author: "Melo Filho; Zhu Qingdong"
+date: "2024-10-16"
+output:
+  html_document:
+    df_print: paged
+---
+
+Initially, there is a population of seashells at one point in the river. Downstream from this point, there is an entry of contaminated effluents into the river. Further downstream, after the entry of these effluents, there is a spot in the river where it would be possible for a population of the same species of seashells to stabilise. However, due to the pollution, the number of individuals in this area remains consistently low.
+
+Next, we want to consider a situation of substantial migration from point A, resulting in the arrival of individuals with mutations that would enable them to survive the existing pollution.
+
+With this, we aim to explore how much migration would be necessary to reach a tipping point, where the resistant population could establish itself and grow, despite the presence of pollution.
+
+
+
+***
+
+## Simulating evolutionary rescue in discrete time
+
+In this notebook, we are implementing simulations of evolutionary rescue by a single mutation in discrete time, as discussed and analyzed in the work by Orr & Unckless. The model is as follows: a haploid population starts with a given number of wild-type and mutant individuals. Because of a sudden environmental change, the wild type is unfit and declines in the new environment. The mutant is beneficial and can survive and expand in the new environment, but it starts at a low (or zero) frequency in the total population. In order to rescue the population, it has to outcompete the wild type. If the mutant is not present at time 0, it has to appear through mutation and then spread in the population before extinction occurs.
+
+
+## List of variables and parameters
+
+- $N_a$ current size of the population "a"  (changes over time)
+- $N_mut$ current size of the mutant (A) who migrated from the population "a" (changes over time)
+- $N_b$ current size of the population "b" (changes over time)
+- $T$ Time
+- N_migra_rate precentage of population who migrate from point A to piont B in population A
+- N_init_a initial population size of population "A" (should be a positive integer)
+- N_init_b initial population size of population "B"  (should be a non-negative integer)
+- decay_rate detrimental effect of the environment on the population "B" (i.e., the wild-type population decays at this rate; should be >0 to induce potential extinction)
+- t_max number of generations after which to stop the simulation (should be an integer >0; this is not a model parameter but a setting for the simulations). In the code presented here, the simulation stops automatically if the population goes extinct, or if it recovers and exceeds 1.5 times the original total population size, so t_max can be set to a large value without creating extremely long simulation times.
+
+## Model with density dependence as suggested by Claudia
+
+### Include competition with logistic growth and migration
+Steps of the life cycle:
+
+*adult migrants of type $a$ arrive
+*reproduction: $a$ individuals always suffer from the decay rate, independent of the current population size; the growth rate of $A$ individuals decreases to 1 as the carrying capacity is approached
+*mutation occurs
+
+### Simulate one generation
+
+```{r}
+simulate_one_gen_mig_logistic <- function(N_a, N_A, carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a) {
+  # adult migrants arrive and are added to 'a' population
+  N_a_mig <- rpois(1, mig_rate_a) # stochastic immigration
+  N_a <- N_a + N_a_mig
+  
+  # determine total population size
+  N_total <- N_a+N_A
+  
+  # reproduction occurs according to decay rates and selection coefficients
+  offsp_a <- rpois(1, N_a * (1-decay_rate)) # independent of carrying capacity
+  offsp_A <- rpois(1, N_A + N_A*(sel_coeff-decay_rate)*(1-N_total/carrying_capacity))
+  # randomly kill individuals if carrying capacity is exceeded
+  offsp_total <- offsp_A + offsp_a
+  if(offsp_total > carrying_capacity)
+  {
+    offsp_a <- rbinom(1,carrying_capacity,c(offsp_a,offsp_A)/offsp_total)
+    offsp_A <- carrying_capacity-offsp_a
+  }
+
+  
+  # draw new mutants according to Poisson distribution
+  mut_a_to_A <- rpois(1, offsp_a * mut_rate)
+  
+  # determine new population sizes of wild type and mutant
+  N_a_new <- offsp_a - mut_a_to_A
+  N_A_new <- offsp_A + mut_a_to_A
+  
+  return(c(N_a_new, N_A_new))
+}
+# Test the function
+print(simulate_one_gen_mig_logistic(N_a=50, N_A=0, carrying_capacity=50, decay_rate=0.1, sel_coeff=0.3, mut_rate=0.1, mig_rate_a=1))
+
+```
+
+## Simulate a population trajectory
+
+We can now track the dynamics of the population from one generation to another, but this is not enough. We want to follow the population from time 0 until it either is rescued or goes extinct. This is what the following function does.
+
+```{r}
+simulate_pop_mig_logistic <- function(N_init_a, N_init_A, carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a, t_max) {
+  # Create the vector in which to save the results
+  pop_vector <- c(N_init_a, N_init_A)
+  # initiate the variables
+  pop_new <- c(N_init_a, N_init_A)
+  
+  # run the simulation until generation t_max
+  for (i in 1:t_max+1) {
+    # redefine the current population one generation later
+    pop_new <- simulate_one_gen_mig_logistic(pop_new[1],pop_new[2],carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a)
+    # add the new population sizes to the output vector
+    pop_vector <- rbind(pop_vector,pop_new)
+  }
+  
+  # define the row and column names of the output vector
+  rownames(pop_vector) <- (0:t_max)[1:length(pop_vector[,1])] # note that the vector has to be cut if the simulation stopped early
+  colnames(pop_vector) <- c("a","A")
+  # return the result
+  return(pop_vector)	
+}
+
+
+# Test the function and plot the result
+# set t_max to a value to be used througout
+max_gen <- 5000
+# create your simulation data
+output <- simulate_pop_mig_logistic(100,0,100,0.1,0.3,0.001,3,max_gen)
+# show the last few lines of the data table
+print(tail(output))
+# plot the output - note that the plot range and the x axis have to be adjusted based on the length of the table
+# determine x axis range 
+x_range <- 0:(length(output[,1])-1)
+# this plots the total population size
+plot(x_range,output[,1]+output[,2],type='l',ylim=c(0,max(output[,1]+output[,2])),xlab = "Generation",ylab = "Population size")
+# add number of wild type individuals
+lines(x_range,output[,1], col="blue")
+# add number of mutant individuals
+lines(x_range,output[,2], col="red")
+```
+
+# Model without density dependence/competition
+
+## Simulate one generation of population size change
+We want to observe the numbers of mutant of population A who surviver the migration . As first step, we simulate one generation of the population A. At time $T$, the population B has $N_b$ current size of the population "b" and $N_ma$ current size of the mutant (A) who migrated from the population "a". First, these reproduce. This is modeled by drawing a Poisson random variable according to the expected absolute number $N_a \cdot (1-r)$ of wild-type individuals, where $r$ is the decay rate of the wild type, and $N_A \cdot (1-r+s)$ of mutant individuals, where $s$ is the selective advantage of the mutant over the wild time. Then mutation from $a$ to $A$ occurs as a Poisson random variable according to the given mutation rate. This defines the composition of the population at time $t+1$.
+```{r}
+simulate_one_gen <- function(N_bw, N_bm, pollution_rate,sel_coeff, migra_rate, mut_rate){
+ 
+  # draw new migration according to Poisson distribution
+  migra_a_to_b <- rpois(1, migra_rate)
+  N_bw <- migra_a_to_b + N_bw
+  # draw offspring_b according to Poisson distribution
+  offsp_bw <- rpois(1, N_bw * (1-pollution_rate))
+  offsp_bm <- rpois(1, N_bm * (1-pollution_rate+sel_coeff))
+  # draw new mutants according to Poisson distribution
+  mutations <- rpois(1, offsp_bw * mut_rate)
+  
+  # determine new population sizes of population B plus migration
+  # N_a_new <- max((offsp_a - migra_a_to_b) * 1.25, 0)
+  
+  N_bw_new <- max(offsp_bw - mutations, 0)
+  N_bm_new <- offsp_bm + mutations
+  # draw new mutants according to Poisson distribution 
+  
+  return(c(N_bw_new,N_bm_new))
+}
+# Test the function
+print(simulate_one_gen(N_bw =1000, N_bm = 0, pollution_rate =.7, sel_coeff=.8, migra_rate =2, mut_rate =.01))
+``` 
+
+## Simulate a population trajectory
+We can now track the dynamics of the population from one generation to another, but this is not enough. We want to follow the population from time 0 until it either is rescued or goes extinct. This is what the following function does.
+```{r}
+set.seed(5)
+simulate_pop <- function(N_bw, N_bm, pollution_rate, sel_coeff, migra_rate, mut_rate, t_max){
+  # Create the vector in which to save the results
+  pop_vector <- c(N_bw, N_bm)
+  print(pop_vector)
+  # initiate the variables
+  pop_new <- c(N_bw, N_bm)
+
+  # run the simulation until generation t_max
+  for (i in (1:(t_max+1))) {
+    # redefine the current population one generation later
+    pop_new <- simulate_one_gen(pop_new[1],pop_new[2],pollution_rate, sel_coeff, migra_rate, mut_rate)
+    # add the new population sizes to the output vector
+    pop_vector <- rbind(pop_vector,pop_new)
+    # condition to stop the simulation before t_max: either the population exceeds 1.5 times the original population size, or it goes extinct
+    #if (pop_new[1]+pop_new[2]>=1.5*(N_bw+N_bm) | pop_new[1]+pop_new[2]==0) break
+  }
+  if (pop_new[1]+pop_new[2]==0) break
+
+   # define the row and column names of the output vector
+
+  rownames(pop_vector) <- (0:t_max)[1:length(pop_vector[,1])] # note that the vector has to be cut if the simulation stopped early
+  colnames(pop_vector) <- c("bw","bm")
+  # return the result
+return(pop_vector)
+}
+
+# Test the function and plot the result
+# create your simulation data
+output <- simulate_pop(N_bw=1000, N_bm=0,pollution_rate=.7, sel_coeff=.8, migra_rate=2, mut_rate=.01, t_max=10)
+# show the last few lines of the data table
+print(tail(output))
+# plot the output - note that the plot range and the x axis have to be adjusted based on the length of the table
+# determine x axis range 
+x_range <- 0:(length(output[,1])-1)
+# this plots the total population size
+plot(x_range,output[,1]+output[,2],type='l',ylim=c(0,max(output[,1]+output[,2])),xlab = "Generation",ylab = "Population size")
+# add number of wild type individuals
+lines(x_range,output[,1], col="blue")
+# add number of mutant individuals
+lines(x_range,output[,2], col="red")
+
+``` 
+
