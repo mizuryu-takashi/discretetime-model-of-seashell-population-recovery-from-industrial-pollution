@@ -184,7 +184,7 @@ carrying_capacity <- 1000
 decay_rate <- 0.1
 sel_coeff <- 0.3
 mut_rate <- 0.001
-mig_rate_a <- 3
+mig_rate_a <- 11
 t_max <- 1000
 n_reps <- 100
 
@@ -210,3 +210,49 @@ table_matrix[rep,1] <- simulate_pop_mig_logistic(N_init_a, N_init_A, carrying_ca
 
 
 ```
+``` {r}
+
+N_init_a <- 30
+N_init_A <- 0
+carrying_capacity <- 1000
+decay_rate <- 0.1
+sel_coeff <- 0.3
+mut_rate <- 0.001
+mig_rate_a <- c(3, 7, 11, 10, 14, 17, 20)
+t_max <- 1000
+n_reps <- 100
+
+
+table_avg <- matrix(nrow = length(mig_rate_a), ncol= 2  ) 
+
+q <- 1
+#  increase migration
+for(mig in mig_rate_a){
+
+ # repeat the simulation n_reps times
+  table_matrix <- matrix(nrow = n_reps, ncol= 1  )
+
+ for (rep in 1:n_reps) {
+   
+# start the simulation with the same initials conditions
+table_matrix[rep,1] <- simulate_pop_mig_logistic(N_init_a, N_init_A, carrying_capacity, decay_rate, sel_coeff, mut_rate, mig, t_max)
+}
+
+  ## Calculate the average to carrying capacity
+  avg_gen_time <- mean(table_matrix)
+  table_avg[q, 1] <- mig
+  table_avg[q,2] <- avg_gen_time
+  
+  q <- q+1
+  
+  }
+ 
+  print(table_avg)
+  
+
+
+
+```
+
+
+
