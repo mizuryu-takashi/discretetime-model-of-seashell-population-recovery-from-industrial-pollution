@@ -175,3 +175,16 @@ max_gen <- 100
 output <- simulate_pop_mig_logistic(1000,0,1000,0.1,0.3,0.001,3,max_gen)
 print(output)
 ```
+
+
+## Try to loop the "find" carrying capacity
+
+
+```{r}
+
+
+
+
+
+´´´
+
