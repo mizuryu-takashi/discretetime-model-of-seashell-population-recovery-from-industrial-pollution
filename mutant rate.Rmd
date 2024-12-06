@@ -218,7 +218,7 @@ N_init_A <- 0
 carrying_capacity <- 1000
 decay_rate <- 0.1
 sel_coeff <- 0.3
-mut_rate <- seq(0.001, 0.1, by = 0.001)  # Sequence of mutation rates to test
+mut_rate <- seq(0.001, 0.03, by = 0.001)  # Sequence of mutation rates to test
 mig_rate_a <- 3
 t_max <- 1000
 n_reps <- 1000

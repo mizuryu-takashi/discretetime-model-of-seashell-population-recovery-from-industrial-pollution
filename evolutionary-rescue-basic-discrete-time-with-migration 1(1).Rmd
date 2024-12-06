@@ -1,0 +1,542 @@
+---
+title: "Basic model of evolutionary rescue in discrete time with immigration and competition"
+author: "Melo Filho; Zhu Qingdong"
+date: "2024-10-25"
+output:
+  html_document:
+    df_print: paged
+---
+
+In this notebook, we explore a modified model of evolutionary rescue, introducing stochastic immigration and competition through logistic growth. The primary biological question addressed is: *"In the event of an increase in the number of migrants, what is the estimated timeframe for reaching carrying capacity, and how might the decay rate affect this outcome?"*
+
+------------------------------------------------------------------------
+
+## Simulating evolutionary rescue in discrete time
+
+In this notebook, we implement simulations of the evolutionary rescue of a mussel population in a river, aided by migration from an upstream population and a single beneficial mutation in discrete time, as discussed and analyzed in the work by Orr & Unckless. The model is as follows: a population begins with a given number of wild-type individuals. Due to a sudden environmental change, caused by pollution reaching this area, the wild type becomes unfit and declines in the new environment. A mutant variant, however, is beneficial and can survive and expand in the polluted environment, though it starts at a low (or zero) frequency in the population. In order to rescue the population, this mutant must outcompete the wild type. If the mutant is not present at time 0, it must appear through mutation and spread within the population before extinction occurs.
+
+## List of variables and parameters
+
+-   $N_a$ current size of the wild-type (a) population (changes over time)
+-   $N_A$ current size of the mutant (A) population (changes over time)
+-   $N_total$ current total population size, representing the sum of wild-type and mutant individuals.
+-   `carrying_capacity` maximum sustainable population size; the population growth rate declines as this limit is approached due to environmental constraints.
+-   `N_init_a` initial population size of wild-type population (should be a positive integer)
+-   `N_init_A` initial population size of the mutant population (should be a non-negative integer)
+-   `decay_rate` detrimental effect of the environment on the wild type (i.e., the wild-type population decays at this rate; should be \>0 to induce potential extinction)
+-   `sel_coeff` selective advantage of the mutant over the wild type (should be \>decay_rate to allow for evolutionary rescue)
+-   `mut_rate` mutation rate from the wild type to the mutant genotype (should be \>0 and small)
+-   `mig_rate_a` is the immigration rate of "a" individuals
+-   `t_max` number of generations after which to stop the simulation (should be an integer \>0; this is not a model parameter but a setting for the simulations). In the code presented here, the simulation stops automatically if the population goes extinct, or if it recovers and exceeds 1.5 times the original total population size, so `t_max` can be set to a large value without creating extremely long simulation times.
+
+## Simulate one generation of population size change
+
+We want to observe the numbers of wild-type and mutant individuals over time. As first step, we simulate one generation of the population. At time $t$, the population has $N_a$ wild-type individuals and $N_A$ mutant individuals. First, these reproduce. This is modeled by drawing a Poisson random variable according to the expected absolute number $N_a \cdot (1-r)$ of wild-type individuals, where $r$ is the decay rate of the wild type, and $N_A \cdot (1-r+s)$ of mutant individuals, where $s$ is the selective advantage of the mutant over the wild time. Then mutation from $a$ to $A$ occurs as a Poisson random variable according to the given mutation rate. This defines the composition of the population at time $t+1$.
+
+## Include competition with logistic growth and migration
+
+Steps of the life cycle:
+
+*adult migrants of type* $a$ arrive reproduction: $a$ individuals always suffer from the decay rate, independent of the current population size; the growth rate of $A$ individuals decreases to 1 as the carrying capacity is approached \*mutation occurs
+
+```{r}
+
+
+# The following function simulates one generation, incorporating immigration and competition effects. Wild-type individuals are subject to decay, while mutant growth decreases as carrying capacity is approached.
+
+simulate_one_gen_mig_logistic <- function(N_a, N_A, carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a) {
+  # adult migrants arrive and are added to 'a' population
+  N_a_mig <- rpois(1, mig_rate_a) # stochastic immigration
+  N_a <- N_a + N_a_mig
+  
+  # determine total population size
+  N_total <- N_a+N_A
+  
+  # reproduction occurs according to decay rates and selection coefficients
+  offsp_a <- rpois(1, N_a * (1-decay_rate)) # independent of carrying capacity
+  offsp_A <- rpois(1, N_A + N_A*(sel_coeff-decay_rate)*(1-N_total/carrying_capacity))
+  # randomly kill individuals if carrying capacity is exceeded
+  offsp_total <- offsp_A + offsp_a
+  if(offsp_total > carrying_capacity)
+  {
+    offsp_a <- rbinom(1,carrying_capacity,c(offsp_a,offsp_A)/offsp_total)
+    offsp_A <- carrying_capacity-offsp_a
+  }
+
+  
+  # draw new mutants according to Poisson distribution
+  mut_a_to_A <- rpois(1, offsp_a * mut_rate)
+  
+  # determine new population sizes of wild type and mutant
+  N_a_new <- offsp_a - mut_a_to_A
+  N_A_new <- offsp_A + mut_a_to_A
+  
+  return(c(N_a_new, N_A_new))
+}
+# Test the function
+print(simulate_one_gen_mig_logistic(N_a=50, N_A=0, carrying_capacity=50, decay_rate=0.1, sel_coeff=0.3, mut_rate=0.1, mig_rate_a=1))
+
+```
+
+### Questions
+
+-   Why do we substract `mut_a_to_A` from `N_a_new` and not from `N_A_new`?
+-   In the life cycle as defined above, do individuals reproduce first and then mutate, or vice versa?
+-   Running the test output repeatedly, why do you almost always get mutant individuals in the next generation, even though you start without any mutants?
+-   What does the function `c` do?
+-   How does immigration influence the population dynamics in this model?
+-   How does competition affect the growth of the wild-type and mutant populations?
+
+## Simulate a population trajectory
+
+Tracking population dynamics over generations helps us observe changes, but for a complete picture, we must follow the population from time 0 until either the mutant type rescues it or it goes extinct. The function below simulates this process, capturing the dynamics between wild-type and mutant populations across generations.
+
+```{r}
+simulate_pop_mig_logistic <- function(N_init_a, N_init_A, carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a, t_max) {
+  # Create the vector in which to save the results
+  pop_vector <- c(N_init_a, N_init_A)
+  # initiate the variables
+  pop_new <- c(N_init_a, N_init_A)
+  
+  # run the simulation until generation t_max
+  for (i in 1:t_max+1) {
+    # redefine the current population one generation later
+    pop_new <- simulate_one_gen_mig_logistic(pop_new[1],pop_new[2],carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a)
+    # add the new population sizes to the output vector
+    pop_vector <- rbind(pop_vector,pop_new)
+  }
+  
+  # define the row and column names of the output vector
+  rownames(pop_vector) <- (0:t_max)[1:length(pop_vector[,1])] # note that the vector has to be cut if the simulation stopped early
+  colnames(pop_vector) <- c("a","A")
+  # return the result
+  return(pop_vector)	
+}
+
+
+# Test the function and plot the result
+# set t_max to a value to be used througout
+max_gen <- 100
+# create your simulation data
+output <- simulate_pop_mig_logistic(1000,0,1000,0.1,0.3,0.001,3,max_gen)
+# show the last few lines of the data table
+print(tail(output))
+# plot the output - note that the plot range and the x axis have to be adjusted based on the length of the table
+# determine x axis range 
+x_range <- 0:(length(output[,1])-1)
+# this plots the total population size
+plot(x_range,output[,1]+output[,2],type='l',ylim=c(0,max(output[,1]+output[,2])),xlab = "Generation",ylab = "Population size")
+# add number of wild type individuals
+lines(x_range,output[,1], col="blue")
+# add number of mutant individuals
+lines(x_range,output[,2], col="red")
+```
+
+## What could be interesting analysis outputs from this model?
+
+Important to note: extinction is impossible because new migrants always come in. But it seems that for high immigration rates and relatively low carrying capacity, the mutant can repeatedly get lost even if it is advantageous in the environment. This complicates the analysis.
+
+### What could we measure?
+
+-   Time until the carrying capacity is reached. *This indicates that the mutant has taken over and "rescued" the population -- at least temporarily.*
+-   Average frequency of the two types over the last XXX (number to be determined, e.g. 100 or 1000?) generations of the simulation. *This describes how much the population is suffering from the inflow of deleterious genotypes.*
+-   Count whether or how often or how fast the mutant is lost again after "rescuing" the population. *This describes how sensitive the rescued population is to swamping from the upstream population.*
+
+### Which parameters to vary, and which to keep constant?
+
+## Find time to carrying capacity
+
+We can now track the dynamics of the population from one generation to another, but this is not enough. We want to follow the population from time 0 until it either is rescued or goes extinct. This is what the following function does.
+
+```{r}
+simulate_pop_mig_logistic <- function(N_init_a, N_init_A, carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a, t_max) {
+  
+  # initiate the variables
+  pop_new <- c(N_init_a, N_init_A)
+  # start counting generations
+  gen <- 0
+  
+  # run the simulation until generation t_max
+  for (i in 1:t_max+1) {
+    # redefine the current population one generation later
+    pop_new <- simulate_one_gen_mig_logistic(pop_new[1],pop_new[2],carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a)
+    # adding one generation to counter
+    gen <- gen+1
+    # calculate population size
+    N_total <- sum(pop_new)
+    # stop when carrying capacity is reached
+    if (N_total == carrying_capacity) break
+  }
+  return(gen)	
+}
+
+
+# Test the function and plot the result
+# set t_max to a value to be used througout
+max_gen <- 100
+# create your simulation data
+output_gens <- simulate_pop_mig_logistic(1000,0,1000,0.1,0.3,0.001,3,max_gen)
+print(output)
+```
+
+```{r}
+simulate_pop_mig_logistic_2 <- function(N_init_a, N_init_A, carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a, t_max) {
+  
+  # initiate the variables
+  pop_new <- c(N_init_a, N_init_A)
+  # start counting generations
+  gen <- 0
+  
+  # run the simulation until generation t_max
+  for (i in 1:t_max+1) {
+    # redefine the current population one generation later
+    pop_new <- simulate_one_gen_mig_logistic(pop_new[1],pop_new[2],carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a)
+    # adding one generation to counter
+    gen <- gen+1
+    # calculate population size
+    N_total <- sum(pop_new)
+    # stop when carrying capacity is reached
+    if (N_total == carrying_capacity) break
+  }
+  return(pop_new[2])	
+}
+
+
+# Test the function and plot the result
+# set t_max to a value to be used througout
+max_gen <- 100
+# create your simulation data
+output_gens <- simulate_pop_mig_logistic(1000,0,1000,0.1,0.3,0.001,3,max_gen)
+print(output)
+```
+
+```{r}
+
+N_init_a <-  1000
+N_init_A <- 0
+carrying_capacity <- 1000
+decay_rate <- 0.1
+sel_coeff <- 0.3
+mut_rate <- 0.001
+mig_rate_a <- 11
+t_max <- 1000
+n_reps <- 500
+
+
+table_matrix <- matrix(nrow = n_reps, ncol = 1) 
+print(table_matrix)  
+
+
+# repeat the simulation n_reps times
+
+ for (rep in 1:n_reps) {
+   
+# start the simulation with the same initials conditions
+table_matrix[rep,1] <- simulate_pop_mig_logistic_2(N_init_a, N_init_A, carrying_capacity, decay_rate, sel_coeff, mut_rate, mig_rate_a, t_max)}
+ 
+  print(table_matrix)  
+
+  ## Calculate the average to carrying capacity
+  avg_Na <- mean(table_matrix)
+  print(avg_NA)
+  
+
+
+
+```
+
+```{r}
+
+N_init_a <- 1000
+N_init_A <- 0
+carrying_capacity <- 1000
+decay_rate <- 0.1
+sel_coeff <- 0.3
+mut_rate <- 0.001
+mig_rate_a <- seq(1, 100, by=1)
+t_max <- 1000
+n_reps <- 500
+
+
+table_avg <- matrix(nrow = length(mig_rate_a), ncol= 2  ) 
+
+q <- 1
+#  increase migration
+for(mig in mig_rate_a){
+
+ # Matrices to store proportions for each replication
+  table_matrix_a <- numeric(n_reps)
+  table_matrix_A <- numeric(n_reps)
+
+ for (rep in 1:n_reps) {
+   
+# start the simulation with the same initials conditions
+table_matrix[rep,1] <- simulate_pop_mig_logistic(N_init_a, N_init_A, carrying_capacity, decay_rate, sel_coeff, mut_rate, mig, t_max)
+# Calculate proportion of carrying capacity
+    table_matrix_a[rep] <- table_matrix_a / carrying_capacity
+    table_matrix_A[rep] <- table_matrix_A / carrying_capacity
+  
+}
+
+ # Store the average proportions
+  table_avg_a[q, 1] <- mig
+  table_avg_a[q, 2] <- mean(table_matrix_a)
+  table_avg_A[q, 1] <- mig
+  table_avg_A[q, 2] <- mean(table_matrix_A)
+  
+  q <- q+1
+  
+  }
+ 
+  print(table_avg)
+  
+# Plot results
+plot(table_avg_a[,1], table_avg_a[,2], type = 'l', col = "red", ylim = c(0, 1), 
+     xlab = "Migration Rate", ylab = "Proportion of Carrying Capacity", 
+     main = "Proportion of Types 'a' and 'A' to Carrying Capacity")
+
+# Add line for proportion of type 'A'
+lines(table_avg_A[,1], table_avg_A[,2], col = "blue")
+
+
+```
+
+```{r}
+
+N_init_a <- 995
+N_init_A <- 5
+carrying_capacity <- 1000
+decay_rate_a <- 0.1
+decay_rate_b <- 0.15
+decay_rate_c <- 0.2
+sel_coeff <- 0.3
+mut_rate <- 0.001
+mig_rate_a <- seq(1, 200, by=2)
+t_max <- 1000
+n_reps <- 1000
+
+# Table to store results for decay_rate = 0.1
+table_avg_a <- matrix(nrow = length(mig_rate_a), ncol= 2)
+
+# Table to store results for decay_rate = 0.15
+table_avg_b <- matrix(nrow = length(mig_rate_a), ncol= 2)
+
+# Table to store results for decay_rate = 0.2
+table_avg_c <- matrix(nrow = length(mig_rate_a), ncol= 2)
+
+
+q <- 1
+#  increase migration
+for(mig in mig_rate_a){
+
+ # repeat the simulation n_reps times
+  table_matrix <- matrix(nrow = n_reps, ncol= 1  )
+
+ for (rep in 1:n_reps) {
+   
+# start the simulation with the same initials conditions with the decay rate A
+table_matrix[rep,1] <- simulate_pop_mig_logistic(N_init_a, N_init_A, carrying_capacity, decay_rate_a, sel_coeff, mut_rate, mig, t_max)
+}
+
+  ## Calculate the average to carrying capacity
+  avg_gen_time <- mean(table_matrix)
+  table_avg_a[q, 1] <- mig
+  table_avg_a[q,2] <- avg_gen_time
+  
+  q <- q+1
+  
+}
+  
+ 
+# start the simulation with the same initials conditions with the decay rate B
+
+q <- 1
+#  increase migration
+for (mig in mig_rate_a) {
+
+ # repeat the simulation n_reps times
+  table_matrix <- matrix(nrow = n_reps, ncol = 1)
+
+ for (rep in 1:n_reps) {
+   
+# start the simulation with the same initials conditions with the decay rate B
+table_matrix[rep,1] <- simulate_pop_mig_logistic(N_init_a, N_init_A, carrying_capacity, decay_rate_b, sel_coeff, mut_rate, mig, t_max)
+}
+
+  ## Calculate the average to carrying capacity
+  avg_gen_time <- mean(table_matrix)
+  table_avg_b[q, 1] <- mig
+  table_avg_b[q,2] <- avg_gen_time
+  
+  q <- q+1
+  
+}  
+# start the simulation with the same initials conditions with the decay rate B
+
+q <- 1
+#  increase migration
+for (mig in mig_rate_a) {
+
+ # repeat the simulation n_reps times
+  table_matrix <- matrix(nrow = n_reps, ncol = 1)
+
+ for (rep in 1:n_reps) {
+   
+# start the simulation with the same initials conditions with the decay rate C
+
+table_matrix[rep,1] <- simulate_pop_mig_logistic(N_init_a, N_init_A, carrying_capacity, decay_rate_c, sel_coeff, mut_rate, mig, t_max)
+}
+
+  ## Calculate the average to carrying capacity
+  avg_gen_time <- mean(table_matrix)
+  table_avg_c[q, 1] <- mig
+  table_avg_c[q,2] <- avg_gen_time
+  
+  q <- q+1
+  
+  }
+  print(table_avg_a)
+  print(table_avg_b)
+  print(table_avg_c)
+
+# Plot the results
+  plot(table_avg_a[,1], table_avg_a[,2], type= 'l', col= "blue", ylim= c(0, max(table_avg_a[,2], table_avg_b[,2], table_avg_c[,2])), xlab = "Mean number of migrants", ylab= "Generations to Carrying Capacity", main = "Comparison of Decay Rates")
+
+# Add the line for decay_rate = 0.5
+  
+  lines(table_avg_b[,1], table_avg_b[,2], col= "red")
+  lines(table_avg_c[,1], table_avg_c[,2], col= "purple")
+ 
+
+```
+
+
+
+
+```{r}
+
+N_init_a <- 1000
+N_init_A <- 0
+carrying_capacity <- 1000
+decay_rate_a <- 0.1
+decay_rate_b <- 0.15
+decay_rate_c <- 0.2
+sel_coeff <- 0.3
+mut_rate <- 0.005
+mig_rate_a <- seq(1, 200, by=2)
+t_max <- 1000
+n_reps <- 500
+
+# Table to store results for decay_rate = 0.1
+table_avg_a <- matrix(nrow = length(mig_rate_a), ncol= 2)
+
+# Table to store results for decay_rate = 0.15
+table_avg_b <- matrix(nrow = length(mig_rate_a), ncol= 2)
+
+# Table to store results for decay_rate = 0.2
+table_avg_c <- matrix(nrow = length(mig_rate_a), ncol= 2)
+
+
+q <- 1
+#  increase migration
+for(mig in mig_rate_a){
+
+ # repeat the simulation n_reps times
+  table_matrix <- matrix(nrow = n_reps, ncol= 1  )
+
+ for (rep in 1:n_reps) {
+   
+# start the simulation with the same initials conditions with the decay rate A
+table_matrix[rep,1] <- simulate_pop_mig_logistic_2(N_init_a, N_init_A, carrying_capacity, decay_rate_a, sel_coeff, mut_rate, mig, t_max)
+}
+
+  ## Calculate the average to carrying capacity
+  avg_gen_time <- mean(table_matrix)
+  table_avg_a[q, 1] <- mig
+  table_avg_a[q,2] <- avg_gen_time
+  
+  q <- q+1
+  
+}
+  
+ 
+# start the simulation with the same initials conditions with the decay rate B
+
+q <- 1
+#  increase migration
+for (mig in mig_rate_a) {
+
+ # repeat the simulation n_reps times
+  table_matrix <- matrix(nrow = n_reps, ncol = 1)
+
+ for (rep in 1:n_reps) {
+   
+# start the simulation with the same initials conditions with the decay rate B
+table_matrix[rep,1] <- simulate_pop_mig_logistic_2(N_init_a, N_init_A, carrying_capacity, decay_rate_b, sel_coeff, mut_rate, mig, t_max)
+}
+
+  ## Calculate the average to carrying capacity
+  avg_gen_time <- mean(table_matrix)
+  table_avg_b[q, 1] <- mig
+  table_avg_b[q,2] <- avg_gen_time
+  
+  q <- q+1
+  
+}  
+# start the simulation with the same initials conditions with the decay rate B
+
+q <- 1
+#  increase migration
+for (mig in mig_rate_a) {
+
+ # repeat the simulation n_reps times
+  table_matrix <- matrix(nrow = n_reps, ncol = 1)
+
+ for (rep in 1:n_reps) {
+   
+# start the simulation with the same initials conditions with the decay rate C
+
+table_matrix[rep,1] <- simulate_pop_mig_logistic_2(N_init_a, N_init_A, carrying_capacity, decay_rate_c, sel_coeff, mut_rate, mig, t_max)
+}
+
+  ## Calculate the average to carrying capacity
+  avg_gen_time <- mean(table_matrix)
+  table_avg_c[q, 1] <- mig
+  table_avg_c[q,2] <- avg_gen_time
+  
+  q <- q+1
+  
+  }
+  print(table_avg_a)
+  print(table_avg_b)
+  print(table_avg_c)
+
+# Plot the results
+  plot(table_avg_a[,1], table_avg_a[,2], type= 'l', col= "blue", ylim= c(0, max(table_avg_a[,2], table_avg_b[,2], table_avg_c[,2])), xlab = "Mean number of migrants", ylab= "Mean number of mutant in carrying capacity", main = "Comparison of Decay Rates")
+
+# Add the line for decay_rate = 0.5
+  
+  lines(table_avg_b[,1], table_avg_b[,2], col= "red")
+  lines(table_avg_c[,1], table_avg_c[,2], col= "purple")
+ 
+
+```
+## Analysis and Observations
+
+-   **Impact of Migration Rate**\
+    Increasing migration rates generally reduced the time needed to reach carrying capacity. However, a saturation point was identified, beyond which further increases in migration had minimal impact.
+
+-   **Influence of Decay Rate**
+
+    -   **Low Decay Rate (e.g., 0.1)**: Carrying capacity was reached more quickly due to minimal environmental stress.
+
+    -   **High Decay Rate (e.g., 0.2)**: Higher decay rates delayed the attainment of carrying capacity, requiring greater migration levels to maintain population stability.
+
+-   **Interaction Between Migration and Decay**\
+    Migration served as a buffer against high decay rates, enabling the population to reach carrying capacity despite environmental stress. However, this effect diminished under extreme conditions.
+
+-   **Key Biological Insights**
+
+    -   **Buffering Effect**: While migration can offset the impacts of decay, it is not sufficient for severe environmental conditions.
+
+    -   **Conservation Implications**: Enhancing connectivity in polluted environments can aid recovery, but reducing pollution remains essential.
